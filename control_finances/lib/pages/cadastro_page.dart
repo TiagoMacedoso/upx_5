@@ -1,112 +1,134 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'dart:convert';
+import '../widgets/app_button.dart';
 
 class CadastroPage extends StatefulWidget {
-  const CadastroPage({super.key});
+  const CadastroPage({Key? key}) : super(key: key);
 
   @override
   State<CadastroPage> createState() => _CadastroPageState();
 }
 
 class _CadastroPageState extends State<CadastroPage> {
-  final _nomeController = TextEditingController();
-  final _emailController = TextEditingController();
-  final _senhaController = TextEditingController();
-
+  final _formKey = GlobalKey<FormState>();
+  final _nomeCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _senhaCtrl = TextEditingController();
   bool _loading = false;
-  String? _mensagem;
 
-  Future<void> _cadastrarUsuario() async {
-    setState(() {
-      _loading = true;
-      _mensagem = null;
-    });
+  Future<void> _cadastrar() async {
+    // só tenta enviar se o form estiver válido
+    if (!_formKey.currentState!.validate()) return;
 
-    final uri = Uri.parse('http://10.0.2.2:3000/api/cadastro');
-    final body = jsonEncode({
-      'nome': _nomeController.text,
-      'email': _emailController.text,
-      'senha': _senhaController.text,
-    });
+    setState(() => _loading = true);
+    final resp = await http.post(
+      Uri.parse('http://192.168.3.19:3000/api/cadastro'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'nome': _nomeCtrl.text.trim(),
+        'email': _emailCtrl.text.trim(),
+        'senha': _senhaCtrl.text,
+      }),
+    );
+    setState(() => _loading = false);
 
-    try {
-      final response = await http.post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: body,
-      );
-
-      if (response.statusCode == 200) {
-        setState(() {
-          _mensagem = "Cadastro realizado com sucesso!";
-        });
-      } else {
-        setState(() {
-          _mensagem = "Erro: ${jsonDecode(response.body)['detail']}";
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _mensagem = "Erro de conexão: $e";
-      });
-    } finally {
-      setState(() => _loading = false);
+    if (resp.statusCode == 200) {
+      Navigator.pop(context);
+    } else {
+      final msg = jsonDecode(resp.body)['detail'] ?? 'Erro ao cadastrar';
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(msg)));
     }
+  }
+
+  @override
+  void dispose() {
+    _nomeCtrl.dispose();
+    _emailCtrl.dispose();
+    _senhaCtrl.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFD6F5D6),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: const BackButton(color: Colors.black),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text("Criar Conta", textAlign: TextAlign.center, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 30),
-            TextField(
-              controller: _nomeController,
-              decoration: const InputDecoration(labelText: "Nome completo"),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _emailController,
-              decoration: const InputDecoration(labelText: "Email"),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _senhaController,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: "Senha"),
-            ),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: _loading ? null : _cadastrarUsuario,
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-              child: _loading
-                  ? const CircularProgressIndicator(color: Colors.white)
-                  : const Text("Cadastrar"),
-            ),
-            const SizedBox(height: 20),
-            if (_mensagem != null)
-              Text(
-                _mensagem!,
-                style: TextStyle(color: _mensagem!.contains("sucesso") ? Colors.green : Colors.red),
+      body: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Center(
+          child: SingleChildScrollView(
+            child: Form(
+              key: _formKey,
+              child: Column(
+                children: [
+                  Image.asset('assets/logo.png', height: 200),
+                  const SizedBox(height: 32),
+
+                  TextFormField(
+                    controller: _nomeCtrl,
+                    decoration:
+                        const InputDecoration(labelText: 'Nome completo'),
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) {
+                        return 'Por favor, digite seu nome completo';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+
+                  TextFormField(
+                    controller: _emailCtrl,
+                    decoration: const InputDecoration(labelText: 'Email'),
+                    keyboardType: TextInputType.emailAddress,
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) {
+                        return 'Por favor, digite seu e-mail';
+                      }
+                      final email = v.trim();
+                      final emailRegex = RegExp(
+                          r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+                      if (!emailRegex.hasMatch(email)) {
+                        return 'E-mail inválido';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+
+                  TextFormField(
+                    controller: _senhaCtrl,
+                    decoration: const InputDecoration(labelText: 'Senha'),
+                    obscureText: true,
+                    validator: (v) {
+                      if (v == null || v.isEmpty) {
+                        return 'Por favor, digite uma senha';
+                      }
+                      if (v.length < 6) {
+                        return 'A senha deve ter ao menos 6 caracteres';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 20),
+
+                  _loading
+                      ? const CircularProgressIndicator()
+                      : AppButton(
+                          label: 'Cadastrar',
+                          icon: Icons.check,
+                          onPressed: _cadastrar,
+                        ),
+
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Já possui uma conta? Entrar'),
+                  ),
+                ],
               ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-              },
-              child: const Text("Já possui uma conta? Entrar"),
-            )
-          ],
+            ),
+          ),
         ),
       ),
     );

@@ -1,112 +1,131 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'dart:convert';
-
-import 'home_page.dart';
+import 'package:control_finances/pages/home_page.dart';
+import '../widgets/app_button.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+  const LoginPage({Key? key}) : super(key: key);
 
   @override
   State<LoginPage> createState() => _LoginPageState();
 }
 
 class _LoginPageState extends State<LoginPage> {
-  final _emailController = TextEditingController();
-  final _senhaController = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+  final _emailCtrl = TextEditingController();
+  final _senhaCtrl = TextEditingController();
   bool _loading = false;
-  String? _mensagem;
 
-  Future<void> _fazerLogin() async {
-    setState(() {
-      _loading = true;
-      _mensagem = null;
-    });
+  @override
+  void dispose() {
+    _emailCtrl.dispose();
+    _senhaCtrl.dispose();
+    super.dispose();
+  }
 
-    final uri = Uri.parse('http://10.0.2.2:3000/api/login');
-    final body = jsonEncode({
-      'email': _emailController.text,
-      'senha': _senhaController.text,
-      'nome': 'não precisa mas tá no model' // só pra evitar erro de model, ignorado na API
-    });
+  Future<void> _login() async {
+    // Só faz login se o formulário estiver válido
+    if (!_formKey.currentState!.validate()) return;
 
-    try {
-      final response = await http.post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: body,
+    setState(() => _loading = true);
+    final resp = await http.post(
+      Uri.parse('http://192.168.3.19:3000/api/login'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'email': _emailCtrl.text.trim(),
+        'senha': _senhaCtrl.text,
+      }),
+    );
+    setState(() => _loading = false);
+
+    if (resp.statusCode == 200) {
+      final data = jsonDecode(utf8.decode(resp.bodyBytes));
+      Navigator.pushReplacementNamed(
+        context,
+        '/home',
+        arguments: {'id': data['id'], 'nome': data['nome']},
       );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        setState(() {
-          _mensagem = "Bem-vindo, ${data['nome']}!";
-        });
-
-        // Ir para tela principal
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const HomePage()),
-        );
-      } else {
-        setState(() {
-          _mensagem = "Erro: ${jsonDecode(response.body)['detail']}";
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _mensagem = "Erro de conexão: $e";
-      });
-    } finally {
-      setState(() => _loading = false);
+    } else {
+      final msg = jsonDecode(resp.body)['detail'] ?? 'Erro ao autenticar';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg)),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFD6F5D6),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 60),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text("Control Finances", textAlign: TextAlign.center, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 40),
-            const Text("Entrar", style: TextStyle(fontSize: 18)),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _emailController,
-              decoration: const InputDecoration(labelText: "Digite seu email"),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _senhaController,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: "Digite sua senha"),
-            ),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: _loading ? null : _fazerLogin,
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-              child: _loading
-                  ? const CircularProgressIndicator(color: Colors.white)
-                  : const Text("Acessar"),
-            ),
-            const SizedBox(height: 20),
-            if (_mensagem != null)
-              Text(
-                _mensagem!,
-                style: TextStyle(
-                    color: _mensagem!.contains("Bem-vindo") ? Colors.green : Colors.red),
+      body: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Center(
+          child: SingleChildScrollView(
+            child: Form(
+              key: _formKey,
+              child: Column(
+                children: [
+                  Image.asset('assets/logo.png', height: 200),
+                  const SizedBox(height: 32),
+
+                  // E-mail
+                  TextFormField(
+                    controller: _emailCtrl,
+                    keyboardType: TextInputType.emailAddress,
+                    autofillHints: const [AutofillHints.email],
+                    textInputAction: TextInputAction.next,
+                    decoration: const InputDecoration(labelText: 'E-mail'),
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) {
+                        return 'E-mail obrigatório';
+                      }
+                      final email = v.trim();
+                      final regex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+                      if (!regex.hasMatch(email)) {
+                        return 'E-mail inválido';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Senha
+                  TextFormField(
+                    controller: _senhaCtrl,
+                    decoration: const InputDecoration(labelText: 'Senha'),
+                    obscureText: true,
+                    textInputAction: TextInputAction.done,
+                    validator: (v) {
+                      if (v == null || v.isEmpty) {
+                        return 'Senha obrigatória';
+                      }
+                      if (v.length < 6) {
+                        return 'A senha deve ter ao menos 6 caracteres';
+                      }
+                      return null;
+                    },
+                    onFieldSubmitted: (_) => _login(),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Botão Entrar
+                  _loading
+                      ? const CircularProgressIndicator()
+                      : AppButton(
+                          label: 'Entrar',
+                          icon: Icons.login,
+                          onPressed: _login,
+                        ),
+
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () => Navigator.pushNamed(context, '/cadastro'),
+                    child: const Text('Criar conta'),
+                  ),
+                ],
               ),
-            TextButton(
-              onPressed: () {
-                Navigator.pushNamed(context, '/cadastro');
-              },
-              child: const Text("Ainda não possui uma conta? Cadastre-se"),
-            )
-          ],
+            ),
+          ),
         ),
       ),
     );
